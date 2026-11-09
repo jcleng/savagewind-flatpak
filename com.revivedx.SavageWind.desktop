@@ -1,0 +1,17 @@
+[Desktop Entry]
+Name=Savage Wind
+GenericName=The Legend of Zelda: Breath of the Wild (PC Recompilation)
+Comment=Static recompilation of Breath of the Wild (bring your own game files)
+Exec=savagewind-wrapper
+Icon=com.revivedx.SavageWind
+Terminal=false
+Type=Application
+Categories=Game;ActionGame;
+Keywords=zelda;breath;wild;botw;savage;wind;switch;
+StartupNotify=true
+StartupWMClass=savagewind
+Actions=Configuration;
+
+[Desktop Action Configuration]
+Name=Savage Wind Configuration
+Exec=savagewind-wrapper --config

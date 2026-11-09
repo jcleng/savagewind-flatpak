@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.revivedx.SavageWind</id>
+  <metadata_license>MIT</metadata_license>
+  <project_license>MIT</project_license>
+
+  <name>Savage Wind</name>
+  <summary>Static recompilation of Breath of the Wild (bring your own game files)</summary>
+
+  <description>
+    <p>
+      Savage Wind Recomp is a work-in-progress static recompilation of The Legend of Zelda:
+      Breath of the Wild (Nintendo Switch, version 1.9.0) into a native Linux application.
+      It aims to be a full PC version of your own copy of the game: PC-style graphics options,
+      any controller, keyboard and mouse support, and the game's text and voices in any language.
+    </p>
+    <p>
+      This is an unofficial Flatpak wrapper around the official upstream AppImage release.
+      It packages the already-compiled binary as-is.
+    </p>
+    <p>
+      IMPORTANT: This package contains no game files, keys, firmware or dumping tools. You must
+      supply your own legally obtained copy of the game, updated to version 1.9.0, dumped from
+      your own console. On first launch the application asks for the folder holding the extracted
+      ExeFS and RomFS, then recompiles the game code locally on your machine with the bundled
+      toolchain.
+    </p>
+    <p>
+      Requirements: an x86-64 CPU with SSE4.2, a GPU with a Vulkan 1.3 driver, 16 GB of RAM and
+      about 20 GB of free disk space.
+    </p>
+  </description>
+
+  <launchable type="desktop-id">com.revivedx.SavageWind.desktop</launchable>
+
+  <url type="homepage">https://github.com/Revivedx/SavageWindRecomp</url>
+  <url type="bugtracker">https://github.com/Revivedx/SavageWindRecomp/issues</url>
+  <url type="help">https://github.com/Revivedx/SavageWindRecomp/blob/main/docs/linux.md</url>
+  <url type="vcs-browser">https://github.com/Revivedx/SavageWindRecomp</url>
+
+  <developer id="com.revivedx">
+    <name>Revivedx and the Savage Wind Recomp contributors</name>
+  </developer>
+
+  <categories>
+    <category>Game</category>
+    <category>ActionGame</category>
+  </categories>
+
+  <keywords>
+    <keyword>zelda</keyword>
+    <keyword>breath</keyword>
+    <keyword>wild</keyword>
+    <keyword>botw</keyword>
+    <keyword>switch</keyword>
+  </keywords>
+
+  <content_rating type="oars-1.1">
+    <content_attribute id="violence-fantasy">moderate</content_attribute>
+  </content_rating>
+
+  <releases>
+    <release version="0.5.0-alpha.5" date="2026-11-09">
+      <description>
+        <p>Packages the upstream Savage Wind Alpha 5 (0.5.0-alpha.5) AppImage release.</p>
+      </description>
+    </release>
+  </releases>
+
+</component>

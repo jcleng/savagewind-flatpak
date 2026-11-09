@@ -1,0 +1,46 @@
+#!/bin/sh
+# Wrapper for Savage Wind inside Flatpak.
+#
+# 上游 AppImage 的入口只有一行 exec usr/bin/savagewind，真正的逻辑都在二进制里：
+# 它按 $XDG_DATA_HOME/savagewind 定位数据目录，再调用同级的 zig/ 与 swgen/ 在本机
+# 重新编译游戏代码。这里只做 Flatpak 需要的环境兜底，不做路径改写。
+
+set -eu
+
+APP_BIN=/app/bin
+APP_LIB=/app/lib
+
+# Flatpak 中 XDG 路径由 runtime 注入：
+#   XDG_DATA_HOME -> ~/.var/app/<id>/data
+# Savage Wind 的 log / ini / save / 已编译的游戏库都落在 ${XDG_DATA_HOME}/savagewind。
+: "${XDG_DATA_HOME:=${HOME}/.local/share}"
+SAVAGEWIND_DATA_DIR="${XDG_DATA_HOME}/savagewind"
+mkdir -p "${SAVAGEWIND_DATA_DIR}"
+
+# 兜底：确保运行时能按 RUNPATH($ORIGIN/../lib) 之外的顺序找到私有库
+# （正常情况下 RUNPATH 已足够，这里只是防止宿主/运行时混装 SDL3、ffmpeg）
+LD_LIBRARY_PATH="${APP_LIB}${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+export LD_LIBRARY_PATH
+
+# zig 与 swgen 以子进程方式被调用，显式写进 PATH，避免首次 setup 时找不到工具链
+PATH="${APP_BIN}:${APP_BIN}/zig:${PATH}"
+export PATH
+
+# zig 首次编译会写全局缓存，固定到沙箱可写区（默认值落在 $HOME/.cache，同样可行，
+# 但显式指定可避免 $HOME 只读的重度沙箱环境）
+: "${ZIG_GLOBAL_CACHE_DIR:=${XDG_CACHE_HOME:-${HOME}/.cache}/zig}"
+export ZIG_GLOBAL_CACHE_DIR
+mkdir -p "${ZIG_GLOBAL_CACHE_DIR}"
+
+# 游戏在 setup 阶段会并行编译游戏代码，沙箱内 /tmp 是私有 tmpfs，
+# 大工程临时文件建议落到数据目录，避免 tmpfs 内存压力
+: "${TMPDIR:=${SAVAGEWIND_DATA_DIR}/.tmp}"
+export TMPDIR
+mkdir -p "${TMPDIR}"
+
+# 未显式指定 GPU 时交给上游自动选择（离散优先），这里不做覆盖
+
+# 固定工作目录到可持久化数据目录，避免相对路径写入落进只读的 /app
+cd "${SAVAGEWIND_DATA_DIR}"
+
+exec "${APP_BIN}/savagewind" "$@"

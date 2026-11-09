@@ -1,0 +1,116 @@
+# Flatpak manifest for Savage Wind Recomp (Breath of the Wild static recompilation)
+#
+# 构建方式：直接解包上游官方 AppImage Release，不做源码编译。
+# 上游项目：https://github.com/Revivedx/SavageWindRecomp
+#
+# 说明：本包不包含任何《塞尔达传说：旷野之息》的游戏文件。
+# 用户必须自行提供合法获得的 1.9.0 版 ExeFS / RomFS，程序首次运行时会要求选择目录，
+# 并在本机重新编译游戏代码（这一步需要本包内置的 zig 与 swgen）。
+id: com.revivedx.SavageWind
+runtime: org.freedesktop.Platform
+runtime-version: '25.08'
+sdk: org.freedesktop.Sdk
+command: savagewind-wrapper
+
+finish-args:
+  # 显示：Vulkan 交换链走 SDL3，x11 + wayland 都开
+  - --socket=x11
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --share=ipc
+  # 音频
+  - --socket=pulseaudio
+  # 网络：上游的更新检查 / 遥测日志上报
+  - --share=network
+  # 显卡：Vulkan 1.3（游戏必需）
+  - --device=dri
+  # 手柄支持（--device=all 是访问 /dev/input 的必要条件）
+  - --device=all
+  # 截图 / 导入游戏文件时让用户从宿主目录挑选
+  - --filesystem=host:ro
+
+modules:
+  # Freedesktop SDK 不自带 unsquashfs，这里单独构建后保留在 /app/bin
+  # （解包 AppImage 完毕后由 savagewind 模块在清理阶段删除）
+  - name: squashfs-tools
+    buildsystem: simple
+    build-commands:
+      - make -C squashfs-tools LZO_SUPPORT=0 XZ_SUPPORT=0 LZ4_SUPPORT=0 \
+          ZSTD_SUPPORT=1 GZIP_SUPPORT=1
+      - install -Dm755 squashfs-tools/unsquashfs /app/bin/unsquashfs
+    sources:
+      - type: archive
+        url: https://github.com/plougher/squashfs-tools/archive/refs/tags/4.6.1.tar.gz
+        sha256: 9c4974e07c61547dae14af4ed1f358b7d04618ae194e54d6be72ee126f0d2f53
+
+  - name: savagewind
+    buildsystem: simple
+    build-commands:
+      # 1. 解包 AppImage（offset 由 --appimage-offset 动态取得，按字节精确切分）
+      - |
+        set -eu
+        # file source 下载后不带可执行位，必须先 chmod
+        chmod +x ./SavageWind.appimage
+        OFFSET=$(./SavageWind.appimage --appimage-offset)
+        echo "AppImage squashfs offset = ${OFFSET}"
+        python3 - "${OFFSET}" <<'PYEOF'
+        import sys
+        off = int(sys.argv[1])
+        with open('SavageWind.appimage', 'rb') as src, open('sw.squashfs', 'wb') as dst:
+            src.seek(off)
+            while True:
+                chunk = src.read(1 << 20)
+                if not chunk:
+                    break
+                dst.write(chunk)
+        PYEOF
+        unsquashfs -q -d appimage-root sw.squashfs
+
+      # 2. 安装主程序与随包文件到 /app/bin
+      #    上游把 zig / swgen / vk_pipelines.seed / colour-luts 都放在 usr/bin，
+      #    靠 $ORIGIN 相对查找，保持目录布局不变即可。
+      - |
+        set -eu
+        install -d ${FLATPAK_DEST}/bin
+        cp -a appimage-root/usr/bin/. ${FLATPAK_DEST}/bin/
+        # 主程序必须留在 bin，包装脚本只负责环境准备后 exec 它
+        test -x ${FLATPAK_DEST}/bin/savagewind
+        test -x ${FLATPAK_DEST}/bin/zig/zig
+        test -x ${FLATPAK_DEST}/bin/swgen/swgen
+
+      # 3. 安装自带的私有共享库（RUNPATH = $ORIGIN/../lib）
+      - |
+        set -eu
+        install -d ${FLATPAK_DEST}/lib
+        cp -a appimage-root/usr/lib/. ${FLATPAK_DEST}/lib/
+
+      # 4. 图标与桌面入口
+      - install -Dm644 com.revivedx.SavageWind.png
+        ${FLATPAK_DEST}/share/icons/hicolor/1024x1024/apps/com.revivedx.SavageWind.png
+      - install -Dm644 com.revivedx.SavageWind.desktop
+        ${FLATPAK_DEST}/share/applications/com.revivedx.SavageWind.desktop
+      - install -Dm644 com.revivedx.SavageWind.metainfo.xml
+        ${FLATPAK_DEST}/share/metainfo/com.revivedx.SavageWind.metainfo.xml
+
+      # 5. 启动包装脚本
+      - install -Dm755 savagewind-wrapper ${FLATPAK_DEST}/bin/savagewind-wrapper
+
+      # 6. 清理：不在最终包里保留解包工具和 AppImage 外层壳
+      - rm -f ${FLATPAK_DEST}/bin/unsquashfs
+        sw.squashfs appimage-root/AppRun appimage-root/savagewind.desktop
+        appimage-root/savagewind.png appimage-root/.DirIcon
+
+    sources:
+      - type: file
+        url: https://github.com/Revivedx/SavageWindRecomp/releases/download/v0.5.0-alpha.5/Savage_Wind-0.5.0-alpha.5-x86_64.AppImage
+        sha256: 6200777861a3e8949c9edc7a73d6b678ceaea0519a13e8a1baebbfb755586ae2
+        dest-filename: SavageWind.appimage
+      - type: file
+        path: icons/com.revivedx.SavageWind.png
+        dest-filename: com.revivedx.SavageWind.png
+      - type: file
+        path: com.revivedx.SavageWind.desktop
+      - type: file
+        path: com.revivedx.SavageWind.metainfo.xml
+      - type: file
+        path: savagewind-wrapper

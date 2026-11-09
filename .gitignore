@@ -1,0 +1,11 @@
+# flatpak-builder 产物
+build-dir/
+.flatpak-builder/
+repo/
+*.flatpak
+*.flatpak.part*
+
+# 构建中间物
+sw.squashfs
+appimage-root/
+SavageWind.appimage
