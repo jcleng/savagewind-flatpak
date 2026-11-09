@@ -49,6 +49,24 @@ extracted/
 
 ## 常见问题
 
+**界面中文显示成问号/方块？**
+本包已内置 Noto Sans SC（Regular），装到 `/app/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc`，
+正好是程序硬编码查找的路径，正常情况下不会出现问号。如果仍然异常，先自查：
+
+```bash
+flatpak run --command=sh com.revivedx.SavageWind -c \
+  'ls -l /usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc'
+```
+
+- 文件缺失 → 装的是旧版包体，升级到最新 Release。
+- 文件存在但仍为问号 → 把 `~/.var/app/com.revivedx.SavageWind/data/savagewind/savagewind.log` 附到 issue。
+
+已知限制：内置的是 **SC（简体）** 子集，不含韩文 Hangul。日文假名与简繁汉字均覆盖。
+原因是上游只提供单字重的 `.otf`，没有现成的 `NotoSansCJK-Regular.ttc`；这里按程序期望的文件名落地，
+stb_truetype（ImGui 的解码器）只按 sfnt 头识别字体、不看扩展名，所以加载正常。
+如需韩文，可自行把官方 `00_NotoSansCJK.ttc.zip` 里的合集解到
+`~/.var/app/com.revivedx.SavageWind/data/fonts/` 并在 issue 反馈，后续可改为打包完整合集（+112 MB）。
+
 **配置里的 `savagewind.ini` 怎么用？**
 手动指定 Vulkan GPU：编辑 `~/.var/app/com.revivedx.SavageWind/data/savagewind/savagewind.ini`，
 设 `gpu = 1`（数字看日志里 `[vk] gpu N:` 那几行），重启即可。临时覆盖用环境变量：

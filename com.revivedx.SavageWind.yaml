@@ -28,8 +28,47 @@ finish-args:
   - --device=all
   # 截图 / 导入游戏文件时让用户从宿主目录挑选
   - --filesystem=host:ro
+  # locale：沙箱默认只有 C.UTF-8，zh_CN 的 locale 数据不在 runtime 里，
+  # 强行设 zh_CN.UTF-8 会导致 setlocale 失败并回退到 POSIX。
+  # 程序界面跟随游戏内语言设置，C.UTF-8 即可正确按 UTF-8 解码中文文本。
+  - --env=LANG=C.UTF-8
+  - --env=LC_ALL=C.UTF-8
 
 modules:
+  # 上游在 Linux 上把 CJK 字体路径写死为 /usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc
+  # （见 savagewind 二进制的 ui_merge_fallback_font）。Flatpak 沙箱里 runtime 不带 CJK 字体，
+  # 宿主字体在 /run/host/... 也不在它要找的路径上，所以中文会全变成问号。
+  # Flathub 上没有可挂载的字体 runtime 扩展（已核实无 org.freedesktop.Platform.fonts），
+  # 只能自己把字体装进 /app/share/fonts，并额外软链到程序硬编码的绝对路径下。
+  - name: noto-cjk-font
+    buildsystem: simple
+    build-commands:
+      # 上游只提供独立字重的 .otf，没有现成的 NotoSansCJK-Regular.ttc。
+      # 用 SC 的 Regular 字重，按程序期望的文件名落地。
+      # stb_truetype(ImGui 的解码器) 只按 sfnt 头识别字体、不看扩展名，改名不影响加载；
+      # 代价是 SC 版不含韩文 Hangul，中日文与简繁汉字均覆盖。
+      # zip 里资源逐字重解压后会共 58 MB，只保留 Regular 与许可证
+      - install -Dm644 NotoSansSC-Regular.otf
+          ${FLATPAK_DEST}/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc
+      - install -Dm644 NotoSansSC-Regular.otf
+          ${FLATPAK_DEST}/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc
+      - install -Dm644 LICENSE ${FLATPAK_DEST}/share/licenses/noto-cjk/LICENSE
+      - |
+        set -eu
+        # 自检：确认落在硬编码路径上的文件是 stb_truetype 能识别的 sfnt 字体
+        python3 - "${FLATPAK_DEST}/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc" <<'PY'
+        import sys
+        p = sys.argv[1]
+        tag = open(p, 'rb').read(4)
+        assert tag in (b'OTTO', b'\x00\x01\x00\x00', b'true', b'ttcf'), f'not an sfnt font: {tag!r}'
+        print(f'{p}: sfnt tag={tag!r} ok')
+        PY
+    sources:
+      - type: archive
+        url: https://github.com/notofonts/noto-cjk/releases/download/Sans2.004/18_NotoSansSC.zip
+        sha256: 4d107c09ada479d3e48b6e78c83835773cbd9214bf6e12cdb7b60f8e068292ec
+        dest-filename: NotoSansSC.zip
+
   # Freedesktop SDK 不自带 unsquashfs，这里单独构建后保留在 /app/bin
   # （解包 AppImage 完毕后由 savagewind 模块在清理阶段删除）
   - name: squashfs-tools

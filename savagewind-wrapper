@@ -10,6 +10,29 @@ set -eu
 APP_BIN=/app/bin
 APP_LIB=/app/lib
 
+# ---- CJK 字体 ----
+# 上游把 CJK 字体路径写死（二进制里的 ui_merge_fallback_font）：
+#   /usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc
+#   /usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc
+# 它不查 fontconfig、也不读 XDG_DATA_DIRS，只按绝对路径 open()。
+#
+# Flatpak 下 /usr/share/fonts 会被合并为 runtime + /app/share/fonts（见 flatpak 的
+# exports/share/fonts 机制），所以字体由清单里的 noto-cjk-font 模块装到
+# /app/share/fonts/noto-cjk/ 后，上面两个路径就能命中。
+# 注意：--filesystem 只能映射到 /run/host/...，无法把宿主字体塞进 /usr，
+# 也不能再依赖宿主装了 Noto CJK。
+FONTS_DIR=/app/share/fonts
+if [ ! -r "${FONTS_DIR}/noto-cjk/NotoSansCJK-Regular.ttc" ]; then
+    echo "savagewind-wrapper: CJK font missing at ${FONTS_DIR}/noto-cjk/NotoSansCJK-Regular.ttc" >&2
+    echo "savagewind-wrapper: 界面中文会显示为方块/问号" >&2
+fi
+
+# 沙箱内 runtime 只带 C.UTF-8，没有 zh_CN locale 数据，强行设 zh_CN.UTF-8 会让
+# setlocale 失败。界面文本本身是 UTF-8，C.UTF-8 即可正常显示中文。
+: "${LANG:=C.UTF-8}"
+: "${LC_ALL:=C.UTF-8}"
+export LANG LC_ALL
+
 # Flatpak 中 XDG 路径由 runtime 注入：
 #   XDG_DATA_HOME -> ~/.var/app/<id>/data
 # Savage Wind 的 log / ini / save / 已编译的游戏库都落在 ${XDG_DATA_HOME}/savagewind。

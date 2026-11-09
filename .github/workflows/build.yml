@@ -107,6 +107,51 @@ jobs:
             exit 1
           }
           flatpak list --app --columns=application,branch
+
+      # 装好的沙箱里验证 CJK 字体真的在程序硬编码的路径上且可被解析，
+      # 避免以后升级又退化成中文问号却没人发现。
+      - name: Verify CJK fonts inside the sandbox
+        run: |
+          set -eu
+          FONT=/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc
+          flatpak run --command=sh "${APP_ID}" -c "
+            set -eu
+            test -r '${FONT}' || { echo 'MISSING: ${FONT}'; exit 1; }
+            ls -l '${FONT}' /usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc
+            head -c 4 '${FONT}' | od -An -c
+            echo '\$LANG:' \"\$LANG\"; echo '\$LC_ALL:' \"\$LC_ALL\"
+          "
+          echo '::group::sfnt + CJK glyph check'
+          # 在容器里用一个最小 stb_truetype 程序确认能加载并查到汉字
+          cat > /tmp/fontcheck.c <<'EOF'
+          #define STB_TRUETYPE_IMPLEMENTATION
+          #include <stdio.h>
+          #include <stdlib.h>
+          #include "stb_truetype.h"
+          int main(int argc, char **argv) {
+            FILE *f = fopen(argv[1], "rb"); if (!f) { perror("open"); return 2; }
+            fseek(f, 0, SEEK_END); long n = ftell(f); fseek(f, 0, SEEK_SET);
+            unsigned char *d = malloc(n); if (fread(d, 1, n, f) != (size_t)n) return 2;
+            fclose(f);
+            if (n < 1024) { fprintf(stderr, "file too small: %ld bytes\n", n); return 5; }
+            int off = stbtt_GetFontOffsetForIndex(d, 0);
+            if (off < 0) { fprintf(stderr, "not an sfnt font (no valid face at index 0)\n"); return 3; }
+            stbtt_fontinfo fi;
+            if (!stbtt_InitFont(&fi, d, off)) return 3;
+            const unsigned cps[] = {0x4E2D, 0x5934, 0x8BBE, 0x7F6E}; /* 中头设置 */
+            for (int i = 0; i < 4; i++)
+              if (!stbtt_FindGlyphIndex(&fi, cps[i])) { printf("missing U+%04X\n", cps[i]); return 4; }
+            printf("ok: sfnt loaded, CJK glyphs present\n");
+            return 0;
+          }
+          EOF
+          # 用 flatpak 沙箱里的 runtime 文件（把字体拷出来，在容器内编译检查）
+          flatpak run --command=cat "${APP_ID}" "${FONT}" > /tmp/NotoSansCJK-Regular.ttc
+          curl -sSL -o /tmp/stb_truetype.h https://raw.githubusercontent.com/nothings/stb/master/stb_truetype.h
+          cc -O1 -I/tmp -o /tmp/fontcheck /tmp/fontcheck.c -lm
+          /tmp/fontcheck /tmp/NotoSansCJK-Regular.ttc
+          echo '::endgroup::'
+
           flatpak uninstall --user -y "${APP_ID}" || true
 
       - name: Compute checksum
