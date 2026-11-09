@@ -44,19 +44,21 @@ modules:
     buildsystem: simple
     build-commands:
       # 上游只提供独立字重的 .otf，没有现成的 NotoSansCJK-Regular.ttc。
-      # 用 SC 的 Regular 字重，按程序期望的文件名落地。
-      # stb_truetype(ImGui 的解码器) 只按 sfnt 头识别字体、不看扩展名，改名不影响加载；
-      # 代价是 SC 版不含韩文 Hangul，中日文与简繁汉字均覆盖。
-      # zip 里资源逐字重解压后会共 58 MB，只保留 Regular 与许可证
+      # 用 SC 的 Regular 字重，保留原始文件名：程序通过 SAVAGEWIND_MENU_FONT
+      # 拿真实路径去 AddFontFromFileTTF，不依赖任何硬编码文件名。
+      # 代价：SC 版不含韩文 Hangul，中日文与简繁汉字均覆盖。
+      # zip 里 7 个字重解压后共 58 MB，只保留 Regular 与许可证。
+      - install -Dm644 NotoSansSC-Regular.otf
+          ${FLATPAK_DEST}/share/fonts/noto-cjk/NotoSansSC-Regular.otf
+      # 双保险：硬编码候选路径 /usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc
+      # 在 Flatpak 里不可写也不可挂载，但仍按该名字放一份，便于将来上游/沙箱行为变化时自动命中。
       - install -Dm644 NotoSansSC-Regular.otf
           ${FLATPAK_DEST}/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc
-      - install -Dm644 NotoSansSC-Regular.otf
-          ${FLATPAK_DEST}/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc
       - install -Dm644 LICENSE ${FLATPAK_DEST}/share/licenses/noto-cjk/LICENSE
       - |
         set -eu
-        # 自检：确认落在硬编码路径上的文件是 stb_truetype 能识别的 sfnt 字体
-        python3 - "${FLATPAK_DEST}/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc" <<'PY'
+        # 自检：确认是 stb_truetype(ImGui) 能识别的 sfnt 字体
+        python3 - "${FLATPAK_DEST}/share/fonts/noto-cjk/NotoSansSC-Regular.otf" <<'PY'
         import sys
         p = sys.argv[1]
         tag = open(p, 'rb').read(4)
