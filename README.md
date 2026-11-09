@@ -50,22 +50,20 @@ extracted/
 ## 常见问题
 
 **界面中文显示成问号/方块？**
-本包已内置 Noto Sans SC（Regular），装到 `/app/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc`，
-正好是程序硬编码查找的路径，正常情况下不会出现问号。如果仍然异常，先自查：
+
+本包已内置 Noto Sans SC（Regular），并通过 `SAVAGEWIND_MENU_FONT` 指向它，正常情况下中文正常显示。自查：
 
 ```bash
 flatpak run --command=sh com.revivedx.SavageWind -c \
-  'ls -l /usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc'
+  'ls -l /app/share/fonts/noto-cjk/ && grep SAVAGEWIND_MENU_FONT /app/bin/savagewind-wrapper'
 ```
 
 - 文件缺失 → 装的是旧版包体，升级到最新 Release。
 - 文件存在但仍为问号 → 把 `~/.var/app/com.revivedx.SavageWind/data/savagewind/savagewind.log` 附到 issue。
 
-已知限制：内置的是 **SC（简体）** 子集，不含韩文 Hangul。日文假名与简繁汉字均覆盖。
-原因是上游只提供单字重的 `.otf`，没有现成的 `NotoSansCJK-Regular.ttc`；这里按程序期望的文件名落地，
-stb_truetype（ImGui 的解码器）只按 sfnt 头识别字体、不看扩展名，所以加载正常。
-如需韩文，可自行把官方 `00_NotoSansCJK.ttc.zip` 里的合集解到
-`~/.var/app/com.revivedx.SavageWind/data/fonts/` 并在 issue 反馈，后续可改为打包完整合集（+112 MB）。
+已知限制：内置的是 **SC（简体）** 子集，不含韩文 Hangul；日文假名与简繁汉字均覆盖。
+上游只提供单字重的 `.otf`，没有现成的 `NotoSansCJK-Regular.ttc`，完整合集需要 +112 MB。
+若需要韩文，可改为打包官方 `00_NotoSansCJK.ttc.zip` 的合集，见下文「为什么用 SAVAGEWIND_MENU_FONT」。
 
 **配置里的 `savagewind.ini` 怎么用？**
 手动指定 Vulkan GPU：编辑 `~/.var/app/com.revivedx.SavageWind/data/savagewind/savagewind.ini`，
@@ -110,6 +108,37 @@ flatpak run --env=SAVAGEWIND_GPU=1 com.revivedx.SavageWind
 4. **Verify bundle** —— 实际 `flatpak install --bundle` 一遍，确认 bundle 能被识别，再卸载。
 5. **Compute checksum / Generate release notes** → **Upload artifact**（保留 14 天）→ **Release**（push 即自动建 Release，
    产物附 SHA256）。
+
+## 为什么用 SAVAGEWIND_MENU_FONT
+
+中文显示问号的问题经历过两轮排除，结论是**不能依赖程序硬编码的字体路径**：
+
+程序 UI 的 CJK 回退字体在 `ui_merge_fallback_font` 里按固定路径顺序查找
+（简体为 `zh_hans_fonts`）：`C:/Windows/Fonts/msyh.ttc` → `simsun.ttc` →
+`/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc` →
+`/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc` → `PingFang.ttc`。
+逻辑就是逐个 `fopen`，第一个成功的就用。
+
+在 Flatpak 沙箱里实测确认这几条 Linux 路径**永远不可用**：
+
+| 检查 | 实测结果 |
+|---|---|
+| 写 `/usr/share/fonts` | `Read-only file system` |
+| `/app/share/fonts` 是否出现在 `/usr/share/fonts` | **不会**，只被 fontconfig 收录（`/etc/fonts/conf.d/50-flatpak.conf` 里 `<dir>/app/share/fonts</dir>`） |
+| `--filesystem=` 能否映射到 `/usr/share/fonts` | 不能，只能落到 `/run/host/...` |
+| Flathub 是否有字体 runtime 扩展 | 没有，仓库索引里无 `org.freedesktop.Platform.fonts` |
+
+于是改从二进制里找入口，发现**上游未写进文档**的 `SAVAGEWIND_MENU_FONT`：
+`load_fonts()` 里 `getenv("SAVAGEWIND_MENU_FONT")` 一旦有值，就直接
+`ImFontAtlas::AddFontFromFileTTF(该路径)`，再叠加回退字体。包装脚本于是把它指向
+`/app/share/fonts/noto-cjk/NotoSansSC-Regular.otf`。
+
+顺带说明：`SAVAGEWIND_FONT` 是另一个东西（游戏内文本用的 `font_for()`，会去找
+`fonts/nintendo_*_003.ttf`），不要混用。
+
+CI 里有一段 `Verify CJK font inside the sandbox`：装好包后用 stb_truetype
+（ImGui 的同款解码器）真的加载字体并查询 `中头设置` 与假名，查不到就让构建失败，
+防止以后换上游版本时又静默退化成问号。
 
 ## 为什么这样做（可行性依据）
 
