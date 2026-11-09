@@ -4,7 +4,6 @@ permissions:
 on:
   workflow_dispatch:
 env:
-  SAVAGEWIND_VERSION: "0.5.0-alpha.5"
   APP_ID: com.revivedx.SavageWind
 jobs:
   probe:
@@ -24,13 +23,15 @@ jobs:
           upload-artifact: false
       - name: Install and probe
         run: |
-          set -eu
           flatpak install --user --noninteractive --bundle "${APP_ID}.flatpak"
-          echo "===== /app/share/fonts ====="
-          flatpak run --command=sh "${APP_ID}" -c 'ls -lR /app/share/fonts 2>&1 | head -30'
-          echo "===== /usr/share/fonts ====="
-          flatpak run --command=sh "${APP_ID}" -c 'ls -la /usr/share/fonts 2>&1; echo "--- noto-cjk:"; ls -la /usr/share/fonts/noto-cjk 2>&1'
-          echo "===== /usr/share mount ====="
-          flatpak run --command=sh "${APP_ID}" -c 'grep -E "fonts|/usr/share" /proc/self/mountinfo | head -20'
-          echo "===== /run/host ====="
-          flatpak run --command=sh "${APP_ID}" -c 'ls -la /run/host 2>&1 | head'
+          P() { flatpak run --command=sh "${APP_ID}" -c "$1" || echo "(exit $?)"; }
+          echo "===== 1. /usr 是只读 tmpfs/overlay? ====="
+          P 'mount | grep -E " / | /usr " ; echo; touch /usr/share/fonts/.w 2>&1; echo "write-to-/usr exit=$?"'
+          echo "===== 2. /usr/share/fonts 挂载来源 ====="
+          P 'grep " /usr/share" /proc/self/mountinfo'
+          echo "===== 3. /app/share/fonts 是否 symlink 进 /usr/share ====="
+          P 'ls -la /usr/share | grep -iE "font|^total" ; ls -la /usr/share/fonts'
+          echo "===== 4. FONTCONFIG 文件里的字体目录 ====="
+          P 'grep -r "<dir" /etc/fonts/conf.d/ 2>/dev/null | head -20'
+          echo "===== 5. /run/host ====="
+          P 'ls -la /run/host 2>&1 | head'
