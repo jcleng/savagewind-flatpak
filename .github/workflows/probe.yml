@@ -1,0 +1,36 @@
+name: Probe sandbox paths
+permissions:
+  contents: read
+on:
+  workflow_dispatch:
+env:
+  SAVAGEWIND_VERSION: "0.5.0-alpha.5"
+  APP_ID: com.revivedx.SavageWind
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:freedesktop-25.08
+      options: --privileged
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          bundle: ${{ env.APP_ID }}.flatpak
+          manifest-path: ${{ env.APP_ID }}.yaml
+          repository-name: flathub
+          branch: stable
+          upload-artifact: false
+      - name: Install and probe
+        run: |
+          set -eu
+          flatpak install --user --noninteractive --bundle "${APP_ID}.flatpak"
+          echo "===== /app/share/fonts ====="
+          flatpak run --command=sh "${APP_ID}" -c 'ls -lR /app/share/fonts 2>&1 | head -30'
+          echo "===== /usr/share/fonts ====="
+          flatpak run --command=sh "${APP_ID}" -c 'ls -la /usr/share/fonts 2>&1; echo "--- noto-cjk:"; ls -la /usr/share/fonts/noto-cjk 2>&1'
+          echo "===== /usr/share mount ====="
+          flatpak run --command=sh "${APP_ID}" -c 'grep -E "fonts|/usr/share" /proc/self/mountinfo | head -20'
+          echo "===== /run/host ====="
+          flatpak run --command=sh "${APP_ID}" -c 'ls -la /run/host 2>&1 | head'
