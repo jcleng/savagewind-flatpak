@@ -39,6 +39,52 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # 先用带重试的 curl 把上游 AppImage 拉下来，再让 flatpak-builder 直接吃本地文件，
+      # 避免上游 release CDN 的 504 抖动打断整个构建。
+      - name: Prefetch upstream AppImage
+        run: |
+          set -eu
+          URL="https://github.com/Revivedx/SavageWindRecomp/releases/download/v${SAVAGEWIND_VERSION}/Savage_Wind-${SAVAGEWIND_VERSION}-x86_64.AppImage"
+          SHA=$(grep -A2 'Savage_Wind-.*x86_64.AppImage' "${APP_ID}.yaml" | grep sha256 | head -1 | awk '{print $2}')
+          test -n "$SHA"
+          echo "expect sha256: $SHA"
+          for i in $(seq 1 10); do
+            echo "::group::attempt $i"
+            if curl -L --fail --retry 5 --retry-delay 5 --retry-all-errors \
+                 --connect-timeout 30 --max-time 900 -o upstream.AppImage "$URL"; then
+              if echo "$SHA  upstream.AppImage" | sha256sum -c -; then
+                echo "::endgroup::"
+                ls -lh upstream.AppImage
+                exit 0
+              fi
+              echo "checksum mismatch, retrying"
+            fi
+            echo "::endgroup::"
+            sleep 10
+          done
+          echo "::error::无法下载上游 AppImage（多次重试后仍失败）"
+          exit 1
+
+      - name: Patch manifest to local source
+        run: |
+          set -eu
+          python3 - <<'PY'
+          import os, re
+          app = os.environ['APP_ID']
+          manifest = f'{app}.yaml'
+          text = open(manifest).read()
+          # 把 remote file source 换成同目录下的本地文件（flatpak-builder 支持 type: file + path）
+          pattern = re.compile(
+              r'- type: file\n\s+url: https://github\.com/Revivedx/SavageWindRecomp/releases/download/'
+              r'[^\n]+\n\s+sha256: [0-9a-f]+\n\s+dest-filename: SavageWind\.appimage\n')
+          new = '- type: file\n        path: upstream.AppImage\n        dest-filename: SavageWind.appimage\n'
+          text2, n = pattern.subn(new, text)
+          assert n == 1, f'expected 1 remote appimage source, patched {n}'
+          open(manifest, 'w').write(text2)
+          print('manifest patched -> local upstream.AppImage')
+          PY
+          grep -n -A3 'type: file' "${APP_ID}.yaml" | head -12
+
       - name: Build Flatpak
         uses: flatpak/flatpak-github-actions/flatpak-builder@v6
         with:
