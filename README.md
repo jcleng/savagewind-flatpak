@@ -78,6 +78,21 @@ flatpak run --env=SAVAGEWIND_GPU=1 com.revivedx.SavageWind
 
 上游每个 release 的 `digest` 字段就是 sha256，可直接取用。
 
+## 构建流程说明
+
+全部构建都在 GitHub Actions（`.github/workflows/build.yml`）完成，本机不需要装 flatpak：
+
+1. **Prefetch upstream AppImage** —— 先用带重试的 `curl` 把上游 AppImage 下载到 workspace 并校验 sha256。
+   上游 release 资产所在的 GitHub objects CDN 会偶发返回 `504`，而 flatpak-builder 的内置下载器遇到这种抖动
+   会直接让整个构建失败，所以这一步单独做，最多重试 10 轮。
+2. **Patch manifest to local source** —— 把清单里的 remote `url`/`sha256` 就地换成 `path: upstream.AppImage`，
+   让 flatpak-builder 只吃本地文件。（仓库里的清单始终保持带 url + sha256 的“可复现”形态。）
+3. **Build Flatpak** —— `flatpak-builder` 在 `ghcr.io/flathub-infra/flatpak-github-actions:freedesktop-25.08`
+   容器里构建并 `build-bundle` 产出 `.flatpak`。
+4. **Verify bundle** —— 实际 `flatpak install --bundle` 一遍，确认 bundle 能被识别，再卸载。
+5. **Compute checksum / Generate release notes** → **Upload artifact**（保留 14 天）→ **Release**（push 即自动建 Release，
+   产物附 SHA256）。
+
 ## 为什么这样做（可行性依据）
 
 封装前对官方 AppImage 0.5.0-alpha.5 做了实际拆包分析：
