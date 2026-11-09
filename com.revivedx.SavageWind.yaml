@@ -86,7 +86,7 @@ modules:
 
       # 4. 图标与桌面入口
       - install -Dm644 com.revivedx.SavageWind.png
-        ${FLATPAK_DEST}/share/icons/hicolor/1024x1024/apps/com.revivedx.SavageWind.png
+        ${FLATPAK_DEST}/share/icons/hicolor/512x512/apps/com.revivedx.SavageWind.png
       - install -Dm644 com.revivedx.SavageWind.desktop
         ${FLATPAK_DEST}/share/applications/com.revivedx.SavageWind.desktop
       - install -Dm644 com.revivedx.SavageWind.metainfo.xml

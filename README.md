@@ -101,7 +101,7 @@ com.revivedx.SavageWind.yaml          # Flatpak 清单（核心）
 savagewind-wrapper                    # 启动包装脚本（环境兜底 + 固定工作目录）
 com.revivedx.SavageWind.desktop       # 桌面入口（含 Configuration 动作）
 com.revivedx.SavageWind.metainfo.xml  # AppStream 元数据
-icons/com.revivedx.SavageWind.png     # 图标（1024x1024，取自上游）
+icons/com.revivedx.SavageWind.png     # 图标（512x512，取自上游并缩放）
 .github/workflows/build.yml           # GitHub Actions 构建 + 自动 Release
 ```
 
