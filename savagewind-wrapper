@@ -11,23 +11,45 @@ APP_BIN=/app/bin
 APP_LIB=/app/lib
 
 # ---- CJK 字体 ----
-# 程序把 CJK 回退字体的候选路径写死在 /usr/share/fonts/...（二进制里的
+# 上游把 CJK 回退字体的候选路径写死在 /usr/share/fonts/...（二进制里的
 # ui_merge_fallback_font / zh_hans_fonts），而 Flatpak 沙箱下：
 #   * /usr 是只读的，不能在运行时写入；
 #   * /app/share/fonts 只会被 fontconfig 收录（50-flatpak.conf），
 #     不会出现在 /usr/share/fonts；
 #   * --filesystem 只能映射到 /run/host/...。
-# 所以那几条硬编码路径在沙箱里永远打不开。
+# 所以那几条硬编码路径在沙箱里永远打不开。改走上游提供的三个环境变量：
+#   * SAVAGEWIND_FONT        -> 游戏内文本（HUD/对话/菜单，走 nn::pl 系统共享字体）
+#   * SAVAGEWIND_MENU_FONT   -> 游戏内叠加菜单（ImGui）
+#   * SAVAGEWIND_LAUNCHER_FONT -> 启动器 / Configuration 窗口（ImGui）
 #
-# 真正的入口是 load_fonts() 里的 SAVAGEWIND_MENU_FONT：
-# 只要设了它，程序就直接 AddFontFromFileTTF(该路径)，然后再叠回退字体。
-# 这个环境变量上游没写进文档，是从二进制里读出来的。
-SAVAGEWIND_FONT_FILE=/app/share/fonts/noto-cjk/NotoSansSC-Regular.otf
-if [ -r "${SAVAGEWIND_FONT_FILE}" ]; then
-    : "${SAVAGEWIND_MENU_FONT:=${SAVAGEWIND_FONT_FILE}}"
-    export SAVAGEWIND_MENU_FONT
+# 关键：两类用途需要不同轮廓格式的字体。
+#   游戏字体引擎（nn::font/nn::pl 路径）只能读 TrueType(glyf) 轮廓，遇到 CFF(.otf) 会崩溃
+#   （上游 runtime/hle/pl.c 的注释与 docs/linux.md 都写了这一点）。所以游戏内文本必须用
+#   文泉驿微米黑（TrueType，含简繁日韩）；ImGui（stb_truetype）可以读 CFF，用 Noto Sans SC。
+SAVAGEWIND_NOTO_FONT=/app/share/fonts/noto-cjk/NotoSansSC-Regular.otf
+SAVAGEWIND_WQY_FONT=/app/share/fonts/wqy/wqy-microhei.ttc
+
+# ImGui 界面：Noto Sans SC（字形更好看，stb_truetype 能解 CFF）
+for _f in "${SAVAGEWIND_NOTO_FONT}" "${SAVAGEWIND_WQY_FONT}"; do
+    if [ -r "${_f}" ]; then
+        : "${SAVAGEWIND_MENU_FONT:=$_f}"
+        : "${SAVAGEWIND_LAUNCHER_FONT:=$_f}"
+        break
+    fi
+done
+export SAVAGEWIND_MENU_FONT SAVAGEWIND_LAUNCHER_FONT
+
+# 游戏内文本：文泉驿微米黑（TrueType）。绝不能用 .otf：游戏字体引擎遇到 CFF 会崩溃。
+if [ -r "${SAVAGEWIND_WQY_FONT}" ]; then
+    : "${SAVAGEWIND_FONT:=${SAVAGEWIND_WQY_FONT}}"
+    export SAVAGEWIND_FONT
 else
-    echo "savagewind-wrapper: CJK font missing: ${SAVAGEWIND_FONT_FILE}" >&2
+    echo "savagewind-wrapper: 缺少游戏内中文字体：${SAVAGEWIND_WQY_FONT}" >&2
+    echo "savagewind-wrapper: 游戏内中文会显示为乱码/日文字形" >&2
+fi
+
+if [ ! -r "${SAVAGEWIND_NOTO_FONT}" ] && [ ! -r "${SAVAGEWIND_WQY_FONT}" ]; then
+    echo "savagewind-wrapper: 缺少 CJK 界面字体" >&2
     echo "savagewind-wrapper: 中文界面会显示为方块/问号" >&2
 fi
 

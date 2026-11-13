@@ -108,23 +108,65 @@ jobs:
           }
           flatpak list --app --columns=application,branch
 
-      # 装好的沙箱里验证 CJK 字体真的能被程序加载到，避免以后升级又退化成中文问号。
-      # 程序的 UI 字体入口是 SAVAGEWIND_MENU_FONT（从二进制 load_fonts() 读出来的），
-      # 不依赖它那几个硬编码的 /usr/share/fonts 候选路径。
-      - name: Verify CJK font inside the sandbox
+      # 装好的沙箱里验证 CJK 字体真的能被程序加载到，避免以后升级又退化成中文乱码：
+      #   * 游戏内文本（SAVAGEWIND_FONT）必须是 TrueType(glyf) 轮廓 + 含中文——游戏字体引擎
+      #     读到 CFF 会崩溃（这也是「设了中文下次打不开」的常见原因）。
+      #   * ImGui 界面（SAVAGEWIND_MENU_FONT / SAVAGEWIND_LAUNCHER_FONT）用 stb_truetype 加载。
+      # 三个入口都是上游二进制里的环境变量，不依赖 /usr/share/fonts 硬编码路径。
+      - name: Verify CJK fonts inside the sandbox
         run: |
           set -eu
-          FONT=/app/share/fonts/noto-cjk/NotoSansSC-Regular.otf
-          echo '::group::font present + wrapper sets the env var'
+          NOTO=/app/share/fonts/noto-cjk/NotoSansSC-Regular.otf
+          WQY=/app/share/fonts/wqy/wqy-microhei.ttc
+
+          echo '::group::fonts present + wrapper sets the env vars'
           flatpak run --command=sh "${APP_ID}" -c "
             set -eu
-            test -r '${FONT}' || { echo 'MISSING: ${FONT}'; exit 1; }
-            ls -l '${FONT}'
+            test -r '${NOTO}' || { echo 'MISSING: ${NOTO}'; exit 1; }
+            test -r '${WQY}'  || { echo 'MISSING: ${WQY}'; exit 1; }
+            ls -l '${NOTO}' '${WQY}'
+            # wrapper 必须把三个变量都设上
+            grep -n SAVAGEWIND_FONT /app/bin/savagewind-wrapper
             grep -n SAVAGEWIND_MENU_FONT /app/bin/savagewind-wrapper
+            grep -n SAVAGEWIND_LAUNCHER_FONT /app/bin/savagewind-wrapper
           "
           echo '::endgroup::'
 
-          echo '::group::stb_truetype load + CJK glyph check'
+          # 关键断言：游戏内文本字体必须是 glyf 轮廓（不是 CFF），且含中日韩字形。
+          echo '::group::SAVAGEWIND_FONT must be TrueType(glyf) + CJK'
+          flatpak run --command=cat "${APP_ID}" "${WQY}" > /tmp/sw-wqy.ttc
+          python3 - /tmp/sw-wqy.ttc <<'PY'
+          import struct, sys
+          d = open(sys.argv[1], 'rb').read()
+          assert d[:4] == b'ttcf', 'not a TrueType collection'
+          n = struct.unpack('>I', d[8:12])[0]
+          off = struct.unpack('>I', d[12:16])[0]  # face 0 (pl.c 的 ttc_face0 只取 face 0)
+          num = struct.unpack('>H', d[off + 4:off + 6])[0]
+          tags = {}
+          for i in range(num):
+              r = off + 12 + 16 * i
+              tags[d[r:r + 4].decode('latin1')] = (struct.unpack('>I', d[r + 8:r + 12])[0],
+                                                   struct.unpack('>I', d[r + 12:r + 16])[0])
+          assert 'glyf' in tags, 'face 0 has no glyf table (CFF?): the game font engine would crash'
+          assert 'CFF ' not in tags, 'face 0 is CFF: the game font engine would crash'
+          cmo = tags['cmap'][0]
+          ntab = struct.unpack('>H', d[cmo + 2:cmo + 4])[0]
+          base = None
+          for i in range(ntab):
+              so = struct.unpack('>I', d[cmo + 8 + 8 * i:cmo + 12 + 8 * i])[0]
+              if struct.unpack('>H', d[cmo + so:cmo + so + 2])[0] == 12:
+                  base = cmo + so
+          ng = struct.unpack('>I', d[base + 12:base + 16])[0]
+          rng = [(struct.unpack('>I', d[base + 16 + 12 * j:base + 20 + 12 * j])[0],
+                  struct.unpack('>I', d[base + 20 + 12 * j:base + 24 + 12 * j])[0]) for j in range(ng)]
+          has = lambda cp: any(s <= cp <= e for s, e in rng)
+          for cp in (0x4E2D, 0x8BBE, 0x7F6E, 0x65E5, 0x3042, 0xAC00):
+              assert has(cp), f'face 0 lacks U+{cp:04X}'
+          print('SAVAGEWIND_FONT: TrueType(glyf) CJK face 0 ok')
+          PY
+          echo '::endgroup::'
+
+          echo '::group::stb_truetype load (ImGui fonts)'
           cat > /tmp/fontcheck.c <<'EOF'
           #define STB_TRUETYPE_IMPLEMENTATION
           #include <stdio.h>
@@ -148,10 +190,13 @@ jobs:
             return 0;
           }
           EOF
-          flatpak run --command=cat "${APP_ID}" "${FONT}" > /tmp/sw-font.otf
           curl -sSL -o /tmp/stb_truetype.h https://raw.githubusercontent.com/nothings/stb/master/stb_truetype.h
           cc -O1 -I/tmp -o /tmp/fontcheck /tmp/fontcheck.c -lm
-          /tmp/fontcheck /tmp/sw-font.otf
+          for FONT in "${NOTO}" "${WQY}"; do
+            flatpak run --command=cat "${APP_ID}" "${FONT}" > /tmp/sw-font.bin
+            echo "checking ${FONT}"
+            /tmp/fontcheck /tmp/sw-font.bin
+          done
           echo '::endgroup::'
 
           flatpak uninstall --user -y "${APP_ID}" || true
