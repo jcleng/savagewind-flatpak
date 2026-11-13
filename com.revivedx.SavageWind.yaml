@@ -124,6 +124,20 @@ modules:
         sha256: 1c19d8eb506a0e9d501d882fc9fe94eca99bc7b2f69f5e64fa79b7ec48cee54d
         dest-filename: LICENSE_Apache2.txt
 
+  # LD_PRELOAD shim：把上游写死的 CJK 字体路径重定向到本包安装的字体。
+  # 上游 ImGui 界面（ui_merge_fallback_font）只 fopen 那 5 条硬编码路径，
+  # 而 SAVAGEWIND_MENU_FONT/LAUNCHER_FONT 只换基础字体、字形范围仍是拉丁（0x20-0xFF），
+  # 拿不到中文。沙箱里那些路径都不存在 —— 这就是“全是问号”的根因。
+  # shim 只改写那几条字面路径，其余原样透传（游戏数据/存档/日志不受影响）。
+  - name: savagewind-cjk-path
+    buildsystem: simple
+    build-commands:
+      - cc -shared -fPIC -O2 -o ${FLATPAK_DEST}/lib/libsavagewind-cjk-path.so
+          savagewind-cjk-path.c -ldl
+    sources:
+      - type: file
+        path: savagewind-cjk-path.c
+
   # Freedesktop SDK 不自带 unsquashfs，这里单独构建后保留在 /app/bin
   # （解包 AppImage 完毕后由 savagewind 模块在清理阶段删除）
   - name: squashfs-tools

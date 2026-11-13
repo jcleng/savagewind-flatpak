@@ -10,6 +10,7 @@ on:
     paths:
       - 'com.revivedx.SavageWind.yaml'
       - 'savagewind-wrapper'
+      - 'savagewind-cjk-path.c'
       - 'com.revivedx.SavageWind.desktop'
       - 'com.revivedx.SavageWind.metainfo.xml'
       - 'icons/**'
@@ -124,12 +125,52 @@ jobs:
             set -eu
             test -r '${NOTO}' || { echo 'MISSING: ${NOTO}'; exit 1; }
             test -r '${WQY}'  || { echo 'MISSING: ${WQY}'; exit 1; }
-            ls -l '${NOTO}' '${WQY}'
-            # wrapper 必须把三个变量都设上
+            test -r /app/lib/libsavagewind-cjk-path.so || { echo 'MISSING: cjk-path shim'; exit 1; }
+            ls -l '${NOTO}' '${WQY}' /app/lib/libsavagewind-cjk-path.so
+            # wrapper 必须引用 shim 与三个字体变量
+            grep -n SAVAGEWIND_CJK_SHIM /app/bin/savagewind-wrapper
+            grep -n LD_PRELOAD /app/bin/savagewind-wrapper
             grep -n SAVAGEWIND_FONT /app/bin/savagewind-wrapper
             grep -n SAVAGEWIND_MENU_FONT /app/bin/savagewind-wrapper
             grep -n SAVAGEWIND_LAUNCHER_FONT /app/bin/savagewind-wrapper
           "
+          echo '::endgroup::'
+
+          # 关键断言：LD_PRELOAD shim 必须把上游写死的 CJK 路径重定向到已安装的字体。
+          # 在沙箱里编译并运行一个小程序：不设 LD_PRELOAD 时那两条路径打不开，
+          # 设了之后必须能 fopen + stat 成功。
+          echo '::group::cjk-path shim redirects hard-coded paths (inside the sandbox)'
+          # 在沙箱里编译并运行：不设 LD_PRELOAD 时上游写死的 CJK 路径打不开（问号根因），
+          # 设了 wrapper 用的 shim 后必须能 fopen + stat 成功。
+          flatpak run --command=sh "${APP_ID}" -c '
+            set -eu
+            cat > /tmp/pathtest.c <<EOF
+          #include <stdio.h>
+          #include <sys/stat.h>
+          int main(void) {
+            const char *p = "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc";
+            const char *q = "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc";
+            int ok = 0;
+            FILE *f1 = fopen(p, "rb"); struct stat s1; int r1 = stat(p, &s1);
+            FILE *f2 = fopen(q, "rb"); struct stat s2; int r2 = stat(q, &s2);
+            if (f1 && r1 == 0) ok++;
+            if (f2 && r2 == 0) ok++;
+            printf("hard-coded CJK paths: %d of 2 open\n", ok);
+            if (f1) fclose(f1); if (f2) fclose(f2);
+            return ok == 2 ? 0 : 1;
+          }
+          EOF
+            cc -O1 -o /tmp/pathtest /tmp/pathtest.c
+            if /tmp/pathtest; then
+              echo "::error::hard-coded CJK paths opened without the shim (test premise broken)"; exit 1
+            fi
+            echo "ok: without the shim, the hard-coded CJK paths do not open (this is the bug the shim fixes)"
+            if LD_PRELOAD=/app/lib/libsavagewind-cjk-path.so /tmp/pathtest; then
+              echo "ok: with the shim, the hard-coded CJK paths open"
+            else
+              echo "::error::shim did not redirect the hard-coded CJK paths"; exit 1
+            fi
+          '
           echo '::endgroup::'
 
           # 关键断言：游戏内文本字体必须是 glyf 轮廓（不是 CFF），且含中日韩字形。

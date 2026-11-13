@@ -51,27 +51,36 @@ extracted/
 
 **界面中文显示成问号/方块，或游戏内中文乱码/显示成日文？**
 
-中文出现在**三个不同的界面**上，由**三种不同的字体入口**控制，所以本包内置**两种** CJK 字体：
+中文出现在**三个不同的界面**上，但它们由**两条完全不同的管线**供给字体，本包各用一招：
 
-| 界面 | 环境变量 | 字体 | 轮廓 |
-|---|---|---|---|
-| 启动器 / Configuration 窗口 | `SAVAGEWIND_LAUNCHER_FONT` | Noto Sans CJK | CFF |
-| 游戏内叠加菜单（按 Tab 弹出的设置窗） | `SAVAGEWIND_MENU_FONT` | Noto Sans CJK | CFF |
-| **游戏内文本**（HUD / 对话 / 游戏菜单） | `SAVAGEWIND_FONT` | **文泉驿微米黑** | **TrueType** |
+| 界面 | 供给方式 | 字体 |
+|---|---|---|
+| 启动器 / Configuration 窗口（ImGui） | **LD_PRELOAD shim** 拦截硬编码路径 | Noto Sans CJK（CFF） |
+| 游戏内叠加菜单（按 Tab，ImGui） | 同上 | Noto Sans CJK（CFF） |
+| **游戏内文本**（HUD / 对话 / 游戏菜单） | `SAVAGEWIND_FONT` 环境变量 | **文泉驿微米黑**（TrueType） |
 
-> 为什么游戏内文本必须用另一种字体：游戏内文本走 Switch 的 `nn::pl` 系统共享字体，
-> **游戏自己的字体引擎只能读 TrueType(glyf) 轮廓，遇到 CFF(.otf) 会崩溃**
-> （上游 `runtime/hle/pl.c` 注释与 `docs/linux.md` 都写明）。所以这一路用文泉驿微米黑
-> （TrueType，含简繁日韩）。这也解释了「设成中文后下次打不开」：如果拿 `.otf` 当
-> `SAVAGEWIND_FONT`，重启时会在加载字体那一步崩溃。
+**为什么 ImGui 界面要 shim，而不能只靠环境变量：** 上游合并 CJK 字形时（`ui_merge_fallback_font`）
+只按 5 条**硬编码路径**逐个 `fopen`：`C:/Windows/Fonts/msyh.ttc`、`simsun.ttc`、
+`/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc`、`/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc`、
+`PingFang.ttc`。沙箱里这些路径都不存在→一个中文字形都没合进图集→**全是问号**。
+而 `SAVAGEWIND_MENU_FONT` / `SAVAGEWIND_LAUNCHER_FONT` 只换**基础字面**，加载时的字形范围
+写死为拉丁 `[0x20,0xFF]`（二进制里实证），**本身拿不到汉字**。所以本包用了和
+[totk-recomp-flatpak](https://github.com/jcleng/totk-recomp-flatpak) 同样的办法：
+一个几十行的 `LD_PRELOAD` shim（`savagewind-cjk-path.c`），**只在**那几条字符串逐字匹配时
+把它们重定向到 `/app/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc`，其余路径原样透传
+（游戏数据/存档/日志/shader/mods 不受影响）。
+
+**为什么游戏内文本必须用 TrueType：** 游戏内文本走 Switch 的 `nn::pl` 系统共享字体，上游
+`runtime/hle/pl.c` 读 `SAVAGEWIND_FONT` 指定的单个字体文件，而**游戏自己的字体引擎只能读
+TrueType(glyf) 轮廓，遇到 CFF(.otf) 会崩溃**（`docs/linux.md` 写明）。所以这一路用文泉驿微米黑。
+这也解释了「设成中文后下次打不开」：若拿 `.otf` 当 `SAVAGEWIND_FONT`，重启时会在加载字体那步崩溃。
 
 自查：
 
 ```bash
 flatpak run --command=sh com.revivedx.SavageWind -c '
-  ls -l /app/share/fonts/noto-cjk/ /app/share/fonts/wqy/ &&
-  env | grep -E "SAVAGEWIND_(LAUNCHER_|MENU_)?FONT" &&
-  grep -nE "SAVAGEWIND_(LAUNCHER_|MENU_)?FONT" /app/bin/savagewind-wrapper'
+  ls -l /app/share/fonts/noto-cjk/ /app/share/fonts/wqy/ /app/lib/libsavagewind-cjk-path.so &&
+  grep -nE "LD_PRELOAD|SAVAGEWIND_(LAUNCHER_|MENU_)?FONT" /app/bin/savagewind-wrapper'
 ```
 
 - 文件缺失 → 装的是旧版包体，升级到最新 Release。
@@ -126,61 +135,70 @@ flatpak run --env=SAVAGEWIND_GPU=1 com.revivedx.SavageWind
 5. **Compute checksum / Generate release notes** → **Upload artifact**（保留 14 天）→ **Release**（push 即自动建 Release，
    产物附 SHA256）。
 
-## 中文显示：三块界面、两个字体入口
+## 中文显示：两套管线，两种办法
 
-先说结论：**中文出现在三块界面上，其中“游戏内文本”和 ImGui 界面用的是完全不同的字体管线**，
-所以要两个字体。早期版本只修了 ImGui 那一半（`SAVAGEWIND_MENU_FONT`），所以“游戏界面中文乱码”
-一直还在。
+中文出现在**三块界面**上，但只有**两条完全不同的管线**，所以用了两个字体、两种办法：
 
-| 界面 | 打开方式 | 技术栈 | 环境变量 | 字体 |
+| 界面 | 打开方式 | 技术栈 | 字体来源 | 字体 |
 |---|---|---|---|---|
-| 启动器 / Configuration | 启动时 / `--config` | Dear ImGui | `SAVAGEWIND_LAUNCHER_FONT` | Noto Sans CJK (.ttc) |
-| 游戏内叠加菜单 | 游戏里按 Tab | Dear ImGui | `SAVAGEWIND_MENU_FONT` | Noto Sans CJK (.ttc) |
-| **游戏内文本** | HUD / 对话 / 游戏菜单 | **`nn::pl` 系统共享字体** | **`SAVAGEWIND_FONT`** | **文泉驿微米黑 (.ttc)** |
+| 启动器 / Configuration | 启动时 / `--config` | Dear ImGui | **LD_PRELOAD shim** | Noto Sans CJK (.ttc, CFF) |
+| 游戏内叠加菜单 | 游戏里按 Tab | Dear ImGui | **LD_PRELOAD shim** | Noto Sans CJK (.ttc, CFF) |
+| **游戏内文本** | HUD / 对话 / 游戏菜单 | **`nn::pl` 系统共享字体** | `SAVAGEWIND_FONT` | **文泉驿微米黑 (.ttc, TrueType)** |
 
-### 为什么不能依赖硬编码路径
+早期版本只设了 `SAVAGEWIND_MENU_FONT`，以为能修 ImGui 界面——**其实修不了**，见下。
 
-程序自带的 CJK 回退字体在 `ui_merge_fallback_font` 里按固定路径逐个 `fopen`
-（简体为 `zh_hans_fonts`）：`C:/Windows/Fonts/msyh.ttc` → `simsun.ttc` →
-`/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc` →
-`/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc` → `PingFang.ttc`。
+### ImGui 界面：为什么必须用 LD_PRELOAD shim
 
-在 Flatpak 沙箱里实测确认这几条 Linux 路径**永远不可用**：
+上游 `ui_merge_fallback_font` 合并 CJK 字形时，只按 `zh_hans_fonts` 等**硬编码路径**逐个 `fopen`：
 
-| 检查 | 实测结果 |
-|---|---|
-| 写 `/usr/share/fonts` | `Read-only file system` |
-| `/app/share/fonts` 是否出现在 `/usr/share/fonts` | **不会**，只被 fontconfig 收录（`/etc/fonts/conf.d/50-flatpak.conf`） |
-| `--filesystem=` 能否映射到 `/usr/share/fonts` | 不能，只能落到 `/run/host/...` |
-| Flathub 是否有字体 runtime 扩展 | 没有，仓库索引里无 `org.freedesktop.Platform.fonts` |
+```
+C:/Windows/Fonts/msyh.ttc  →  simsun.ttc  →
+/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc  →
+/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc  →  PingFang.ttc
+```
 
-所以本包不碰那些硬编码路径，而是用上游自带的**三个环境变量**直接把真实路径给程序（从二进制里
-能找到这三个名字）：包装脚本把它们指向 `/app/share/fonts/` 下的字体。
+Flatpak 沙箱里这些路径**全部不存在**（`/usr` 是只读 runtime、`/app` 才是我们的、宿主字体在
+`/run/host`），于是**一个中文字形都没合进图集 → 全是问号**。
 
-### 为什么游戏内文本必须单独用 TrueType 字体
+关键点（已从二进制实证，不是猜的）：
 
-这是最容易被忽略、也是“设了中文后下次打不开”的根源：
+- `SAVAGEWIND_MENU_FONT` / `SAVAGEWIND_LAUNCHER_FONT` 只是把**基础字面**换成别的字体，
+  加载时的字形范围写死为拉丁 `[0x20,0xFF]`（`launcher_fonts::latin` 的字节是 `20 00 ff 00`），
+  **汉字根本不在这个范围里**，所以设了它们 ImGui 界面依旧是问号；
+- 唯一能带汉字的是上面那次"合并"，而它只认硬编码路径。
 
-- 游戏内文本走 Switch 的系统共享字体（`nn::pl`），上游在 `runtime/hle/pl.c` 里用
-  `SAVAGEWIND_FONT` 指定字体文件；
+本包沿用 [totk-recomp-flatpak](https://github.com/jcleng/totk-recomp-flatpak) 的做法：
+一个几十行的 `LD_PRELOAD` shim（`savagewind-cjk-path.c`），**只在**那几条字符串逐字匹配时
+重定向到 `/app/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc`，其余任何路径原样透传
+（游戏数据、存档、日志、shader 缓存、mods 都不受影响）。包装脚本把它加进 `LD_PRELOAD`。
+
+### 游戏内文本：为什么必须单独用 TrueType 字体
+
+这是最容易被忽略、也是"设了中文后下次打不开"的根源：
+
+- 游戏内文本走 Switch 的系统共享字体（`nn::pl`），上游 `runtime/hle/pl.c` 读 `SAVAGEWIND_FONT`
+  指定的**单个字体文件**（这个入口是真的，`getenv("SAVAGEWIND_FONT")` 就在 `load_fonts()` 首位）；
 - **游戏自己的字体引擎只能读 TrueType(glyf) 轮廓，遇到 CFF(.otf) 会崩溃**
   （`runtime/hle/pl.c` 注释与 `docs/linux.md` 都写明）；
-- Noto Sans CJK（包括我们给 ImGui 用的 `NotoSansCJK-Regular.ttc`）是 **CFF/`OTTO`** 字体，
-  拿去给 `SAVAGEWIND_FONT` 就是崩溃；
+- Noto Sans CJK（包括给 ImGui 用的 `NotoSansCJK-Regular.ttc`）是 **CFF/`OTTO`**，拿去给
+  `SAVAGEWIND_FONT` 就是崩溃——这正是"设成中文后下次打不开"；
 - 文泉驿微米黑是 **TrueType/`glyf`**，face 0 收录 GBK 汉字 + 假名 + 谚文，约 5 MB，
-  Apache-2.0（可再分发），是游戏字体引擎能安全加载的最小可用中文字体。
+  Apache-2.0，是游戏字体引擎能安全加载的最小可用中文字体。
 
-`pl.c` 的 `ttc_face0()` 会把 `.ttc` 的 **face 0** 抽成独立 sfnt，所以本包用的是 wenquanyi
-的 「WenQuanYi Micro Hei」（非 Mono）那个 face——已验证是 glyf 且含中日韩字形。
+`pl.c` 的 `ttc_face0()` 会把 `.ttc` 的 **face 0** 抽成独立 sfnt，所以用的是 wenquanyi 的
+「WenQuanYi Micro Hei」（非 Mono）那个 face——已验证是 glyf 且含中日韩字形。
 
 ### CI 怎么防止回退
 
 `Verify CJK fonts inside the sandbox` 这一段在装好的沙箱里：
 
-1. 确认 `/app/share/fonts/noto-cjk/` 与 `/app/share/fonts/wqy/` 两个字体都在，wrapper 三个变量都设了；
-2. 对 `SAVAGEWIND_FONT` 指向的 `.ttc` 做**结构断言**：face 0 必须有 `glyf` 表、**不能有 `CFF ` 表**、
-   且 `cmap` 含 `中设置日あ가`——任一条失败就中断构建（防止以后又把 `.otf` 塞给游戏内文本而崩溃）；
-3. 用 stb_truetype（ImGui 同款解码器）把两个字体都真加载一遍并查字形。
+1. 确认两个字体 + `/app/lib/libsavagewind-cjk-path.so` 都在，wrapper 引用 shim、
+   `LD_PRELOAD` 与三个字体变量；
+2. **shim 功能断言**（在沙箱里编译并运行）：不设 `LD_PRELOAD` 时上游那两条硬编码 CJK 路径
+   `fopen/stat` 必须**失败**（重现问号根因），设了 wrapper 的 shim 后必须**成功**（2/2）；
+3. 对 `SAVAGEWIND_FONT` 指向的 `.ttc` 做结构断言：face 0 必须有 `glyf` 表、**不能有 `CFF ` 表**、
+   且 `cmap` 含 `中设置日あ가`——防止以后又把 `.otf` 塞给游戏内文本而崩溃；
+4. 用 stb_truetype（ImGui 同款解码器）把两个字体都真加载一遍并查字形。
 
 ## 为什么这样做（可行性依据）
 

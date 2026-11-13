@@ -11,46 +11,50 @@ APP_BIN=/app/bin
 APP_LIB=/app/lib
 
 # ---- CJK 字体 ----
-# 上游把 CJK 回退字体的候选路径写死在 /usr/share/fonts/...（二进制里的
-# ui_merge_fallback_font / zh_hans_fonts），而 Flatpak 沙箱下：
-#   * /usr 是只读的，不能在运行时写入；
-#   * /app/share/fonts 只会被 fontconfig 收录（50-flatpak.conf），
-#     不会出现在 /usr/share/fonts；
-#   * --filesystem 只能映射到 /run/host/...。
-# 所以那几条硬编码路径在沙箱里永远打不开。改走上游提供的三个环境变量：
-#   * SAVAGEWIND_FONT        -> 游戏内文本（HUD/对话/菜单，走 nn::pl 系统共享字体）
-#   * SAVAGEWIND_MENU_FONT   -> 游戏内叠加菜单（ImGui）
-#   * SAVAGEWIND_LAUNCHER_FONT -> 启动器 / Configuration 窗口（ImGui）
+# 中文出现在三块界面上，由三条不同的路径供给字体：
+#   1) 启动器 / Configuration 窗口（Dear ImGui）
+#   2) 游戏内叠加菜单（Dear ImGui）
+#   3) 游戏内文本（HUD/对话/游戏菜单，走 nn::pl 系统共享字体）
 #
-# 关键：两类用途需要不同轮廓格式的字体。
-#   游戏字体引擎（nn::font/nn::pl 路径）只能读 TrueType(glyf) 轮廓，遇到 CFF(.otf) 会崩溃
-#   （上游 runtime/hle/pl.c 的注释与 docs/linux.md 都写了这一点）。所以游戏内文本必须用
-#   文泉驿微米黑（TrueType，含简繁日韩）；ImGui（stb_truetype）可以读 CFF，用 Noto Sans SC。
+# (1)(2) ImGui：上游 ui_merge_fallback_font 只按硬编码的 5 条路径 fopen 去合并 CJK 字形：
+#     C:/Windows/Fonts/msyh.ttc, .../simsun.ttc,
+#     /usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc,
+#     /usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc, /System/Library/Fonts/PingFang.ttc
+#   沙箱里这些路径都不存在 -> 没有任何 CJK 字形 -> 全是问号。
+#   注意：SAVAGEWIND_MENU_FONT / SAVAGEWIND_LAUNCHER_FONT 只替换基础字面，而它加载时的
+#   字形范围写死为拉丁 [0x20,0xFF]（二进制里实证），本身拿不到汉字；中文只能来自上面那次
+#   合并。所以光设环境变量修不好界面，必须让那几条硬编码路径能打开。
+#   做法（同 totk-recomp-flatpak）：LD_PRELOAD 一个小 shim，把这几条路径重定向到
+#   本包自带的 CJK 字体，其余路径原样透传。
+#
+# (3) 游戏内文本：上游 runtime/hle/pl.c 读 SAVAGEWIND_FONT 指定的单个字体文件。
+#   游戏字体引擎只能读 TrueType(glyf)，遇到 CFF(.otf/.ttc CFF) 会崩溃，所以这一路用
+#   文泉驿微米黑（TrueType）。
 SAVAGEWIND_NOTO_FONT=/app/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc
 SAVAGEWIND_WQY_FONT=/app/share/fonts/wqy/wqy-microhei.ttc
 
-# ImGui 界面：Noto Sans SC（字形更好看，stb_truetype 能解 CFF）
-for _f in "${SAVAGEWIND_NOTO_FONT}" "${SAVAGEWIND_WQY_FONT}"; do
-    if [ -r "${_f}" ]; then
-        : "${SAVAGEWIND_MENU_FONT:=$_f}"
-        : "${SAVAGEWIND_LAUNCHER_FONT:=$_f}"
-        break
-    fi
-done
-export SAVAGEWIND_MENU_FONT SAVAGEWIND_LAUNCHER_FONT
+# (1)(2) ImGui：shim 负责把硬编码路径接到 Noto Sans CJK。
+SAVAGEWIND_CJK_SHIM=/app/lib/libsavagewind-cjk-path.so
+if [ -r "${SAVAGEWIND_CJK_SHIM}" ]; then
+    LD_PRELOAD="${SAVAGEWIND_CJK_SHIM}${LD_PRELOAD:+:${LD_PRELOAD}}"
+    export LD_PRELOAD
+    # 既然 shim 已重定向，就不必再靠 MENU/LAUNCHER_FONT（它也不带汉字）；
+    # 但保留一份指向 Noto 的设置无害，且若 shim 失效仍能改善拉丁版面。
+    : "${SAVAGEWIND_MENU_FONT:=${SAVAGEWIND_NOTO_FONT}}"
+    : "${SAVAGEWIND_LAUNCHER_FONT:=${SAVAGEWIND_NOTO_FONT}}"
+    export SAVAGEWIND_MENU_FONT SAVAGEWIND_LAUNCHER_FONT
+else
+    echo "savagewind-wrapper: 缺少 CJK 路径 shim：${SAVAGEWIND_CJK_SHIM}" >&2
+    echo "savagewind-wrapper: ImGui 界面中文会显示为问号" >&2
+fi
 
-# 游戏内文本：文泉驿微米黑（TrueType）。绝不能用 .otf：游戏字体引擎遇到 CFF 会崩溃。
+# (3) 游戏内文本：文泉驿微米黑（TrueType）。绝不能用 .otf：游戏字体引擎遇到 CFF 会崩溃。
 if [ -r "${SAVAGEWIND_WQY_FONT}" ]; then
     : "${SAVAGEWIND_FONT:=${SAVAGEWIND_WQY_FONT}}"
     export SAVAGEWIND_FONT
 else
     echo "savagewind-wrapper: 缺少游戏内中文字体：${SAVAGEWIND_WQY_FONT}" >&2
     echo "savagewind-wrapper: 游戏内中文会显示为乱码/日文字形" >&2
-fi
-
-if [ ! -r "${SAVAGEWIND_NOTO_FONT}" ] && [ ! -r "${SAVAGEWIND_WQY_FONT}" ]; then
-    echo "savagewind-wrapper: 缺少 CJK 界面字体" >&2
-    echo "savagewind-wrapper: 中文界面会显示为方块/问号" >&2
 fi
 
 # 沙箱内 runtime 只带 C.UTF-8，没有 zh_CN locale 数据，强行设 zh_CN.UTF-8 会让
