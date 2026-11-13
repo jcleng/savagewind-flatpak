@@ -132,6 +132,7 @@ modules:
   - name: savagewind-cjk-path
     buildsystem: simple
     build-commands:
+      - install -d ${FLATPAK_DEST}/lib
       - cc -shared -fPIC -O2 -o ${FLATPAK_DEST}/lib/libsavagewind-cjk-path.so
           savagewind-cjk-path.c -ldl
     sources:
