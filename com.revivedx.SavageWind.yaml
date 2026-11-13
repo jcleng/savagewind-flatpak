@@ -41,19 +41,20 @@ modules:
   #     CFF 会崩溃（见上游 runtime/hle/pl.c 的注释），所以必须用文泉驿微米黑（TrueType, 含简繁日韩）。
   # 两者都装进 /app/share/fonts，由包装脚本用环境变量指定真实路径，不依赖硬编码的 /usr/share/fonts。
 
-  # Noto Sans SC（CFF/OTTO）：仅用于 ImGui 界面。
+  # Noto Sans CJK（CFF/OTTO 合集，10 faces）：仅用于 ImGui 界面。
+  # 直接取 GitHub raw 上的 NotoSansCJK-Regular.ttc（与上游硬编码候选同名）。
   # 程序通过 SAVAGEWIND_MENU_FONT / SAVAGEWIND_LAUNCHER_FONT 拿真实路径去
-  # AddFontFromFileTTF，不依赖任何硬编码文件名。
+  # AddFontFromFileTTF，不依赖任何硬编码路径。
   - name: noto-cjk-font
     buildsystem: simple
     build-commands:
-      - install -Dm644 NotoSansSC-Regular.otf
-          ${FLATPAK_DEST}/share/fonts/noto-cjk/NotoSansSC-Regular.otf
+      - install -Dm644 NotoSansCJK-Regular.ttc
+          ${FLATPAK_DEST}/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc
       - install -Dm644 LICENSE ${FLATPAK_DEST}/share/licenses/noto-cjk/LICENSE
       - |
         set -eu
-        # 自检：确认是 stb_truetype(ImGui) 能识别的 sfnt 字体
-        python3 - "${FLATPAK_DEST}/share/fonts/noto-cjk/NotoSansSC-Regular.otf" <<'PY'
+        # 自检：确认是 stb_truetype(ImGui) 能识别的 sfnt 合集
+        python3 - "${FLATPAK_DEST}/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc" <<'PY'
         import sys
         p = sys.argv[1]
         tag = open(p, 'rb').read(4)
@@ -61,21 +62,25 @@ modules:
         print(f'{p}: sfnt tag={tag!r} ok')
         PY
     sources:
-      - type: archive
-        url: https://github.com/notofonts/noto-cjk/releases/download/Sans2.004/18_NotoSansSC.zip
-        sha256: 4d107c09ada479d3e48b6e78c83835773cbd9214bf6e12cdb7b60f8e068292ec
-        dest-filename: NotoSansSC.zip
+      - type: file
+        url: https://raw.githubusercontent.com/googlefonts/noto-cjk/main/Sans/OTC/NotoSansCJK-Regular.ttc
+        sha256: b76b0433203017ca80401b2ee0dd69350349871c4b19d504c34dbdd80541690a
+        dest-filename: NotoSansCJK-Regular.ttc
+      - type: file
+        url: https://raw.githubusercontent.com/googlefonts/noto-cjk/main/LICENSE
+        sha256: 6a73f9541c2de74158c0e7cf6b0a58ef774f5a780bf191f2d7ec9cc53efe2bf2
+        dest-filename: LICENSE
 
   # 文泉驿微米黑（TrueType/glyf）：给游戏内文本用（SAVAGEWIND_FONT）。
-  # 上游原始发布，Apache-2.0 或 GPL-3+ with Font exception（按 Apache-2.0 再分发）。
+  # GitHub 上的副本，与上游 SourceForge 原始文件 sha256 一致
+  # （e4bca8df...；Apache-2.0 或 GPL-3+ with Font exception，按 Apache-2.0 再分发）。
   # ttc 的 face 0 是「WenQuanYi Micro Hei」，含 GBK 汉字、假名、谚文，TrueType 轮廓，
   # 是游戏字体引擎（只要 glyf、遇 CFF 崩溃）能安全加载的最小可用中文字体。
   - name: wqy-microhei-font
     buildsystem: simple
     build-commands:
-      # tar.gz 解出 wqy-microhei/ 子目录（noto 的 zip 直接解到当前目录）
-      - install -Dm644 wqy-microhei/wqy-microhei.ttc ${FLATPAK_DEST}/share/fonts/wqy/wqy-microhei.ttc
-      - install -Dm644 wqy-microhei/LICENSE_Apache2.txt ${FLATPAK_DEST}/share/licenses/wqy-microhei/LICENSE_Apache2.txt
+      - install -Dm644 wqy-microhei.ttc ${FLATPAK_DEST}/share/fonts/wqy/wqy-microhei.ttc
+      - install -Dm644 LICENSE_Apache2.txt ${FLATPAK_DEST}/share/licenses/wqy-microhei/LICENSE_Apache2.txt
       - |
         set -eu
         # 自检：必须是 glyf 轮廓（游戏字体引擎读不了 CFF），且 face 0 含中日韩字形
@@ -110,9 +115,14 @@ modules:
         print(f'{sys.argv[1]}: TrueType(glyf) CJK face 0 ok, {n} faces')
         PY
     sources:
-      - type: archive
-        url: https://downloads.sourceforge.net/project/wqy/wqy-microhei/0.2.0-beta/wqy-microhei-0.2.0-beta.tar.gz
-        sha256: 2802ac8023aa36a66ea6e7445854e3a078d377ffff42169341bd237871f7213e
+      - type: file
+        url: https://raw.githubusercontent.com/anthonyfok/fonts-wqy-microhei/master/wqy-microhei.ttc
+        sha256: e4bca8df123ce01b104780f576ea1a58b9a5ff1662a91124b6d3180cb6c88212
+        dest-filename: wqy-microhei.ttc
+      - type: file
+        url: https://raw.githubusercontent.com/anthonyfok/fonts-wqy-microhei/master/LICENSE_Apache2.txt
+        sha256: 1c19d8eb506a0e9d501d882fc9fe94eca99bc7b2f69f5e64fa79b7ec48cee54d
+        dest-filename: LICENSE_Apache2.txt
 
   # Freedesktop SDK 不自带 unsquashfs，这里单独构建后保留在 /app/bin
   # （解包 AppImage 完毕后由 savagewind 模块在清理阶段删除）

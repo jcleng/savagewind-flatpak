@@ -55,8 +55,8 @@ extracted/
 
 | 界面 | 环境变量 | 字体 | 轮廓 |
 |---|---|---|---|
-| 启动器 / Configuration 窗口 | `SAVAGEWIND_LAUNCHER_FONT` | Noto Sans SC | CFF |
-| 游戏内叠加菜单（按 Tab 弹出的设置窗） | `SAVAGEWIND_MENU_FONT` | Noto Sans SC | CFF |
+| 启动器 / Configuration 窗口 | `SAVAGEWIND_LAUNCHER_FONT` | Noto Sans CJK | CFF |
+| 游戏内叠加菜单（按 Tab 弹出的设置窗） | `SAVAGEWIND_MENU_FONT` | Noto Sans CJK | CFF |
 | **游戏内文本**（HUD / 对话 / 游戏菜单） | `SAVAGEWIND_FONT` | **文泉驿微米黑** | **TrueType** |
 
 > 为什么游戏内文本必须用另一种字体：游戏内文本走 Switch 的 `nn::pl` 系统共享字体，
@@ -79,7 +79,7 @@ flatpak run --command=sh com.revivedx.SavageWind -c '
   （和上一次运行的 `savagewind.prev.log`）附到 issue；日志里 `[pl] system font ...` 那行会说明游戏实际加载的是哪个字体。
 
 已知限制：游戏内文本用文泉驿微米黑，收录 GBK 常用汉字与假名、谚文，**生僻字可能缺**；
-ImGui 界面用 Noto Sans SC（简体子集，不含韩文 Hangul，但含简繁汉字与假名）。
+ImGui 界面用 Noto Sans CJK 合集（含简繁日韩，10 个 face）。
 要换字体时记住上面的硬约束：**给 `SAVAGEWIND_FONT` 的必须是 TrueType(glyf) 字体**。
 
 **配置里的 `savagewind.ini` 怎么用？**
@@ -134,8 +134,8 @@ flatpak run --env=SAVAGEWIND_GPU=1 com.revivedx.SavageWind
 
 | 界面 | 打开方式 | 技术栈 | 环境变量 | 字体 |
 |---|---|---|---|---|
-| 启动器 / Configuration | 启动时 / `--config` | Dear ImGui | `SAVAGEWIND_LAUNCHER_FONT` | Noto Sans SC (.otf) |
-| 游戏内叠加菜单 | 游戏里按 Tab | Dear ImGui | `SAVAGEWIND_MENU_FONT` | Noto Sans SC (.otf) |
+| 启动器 / Configuration | 启动时 / `--config` | Dear ImGui | `SAVAGEWIND_LAUNCHER_FONT` | Noto Sans CJK (.ttc) |
+| 游戏内叠加菜单 | 游戏里按 Tab | Dear ImGui | `SAVAGEWIND_MENU_FONT` | Noto Sans CJK (.ttc) |
 | **游戏内文本** | HUD / 对话 / 游戏菜单 | **`nn::pl` 系统共享字体** | **`SAVAGEWIND_FONT`** | **文泉驿微米黑 (.ttc)** |
 
 ### 为什么不能依赖硬编码路径
@@ -165,7 +165,7 @@ flatpak run --env=SAVAGEWIND_GPU=1 com.revivedx.SavageWind
   `SAVAGEWIND_FONT` 指定字体文件；
 - **游戏自己的字体引擎只能读 TrueType(glyf) 轮廓，遇到 CFF(.otf) 会崩溃**
   （`runtime/hle/pl.c` 注释与 `docs/linux.md` 都写明）；
-- Noto Sans CJK（包括我们给 ImGui 用的 `NotoSansSC-Regular.otf`）是 **CFF/`OTTO`** 字体，
+- Noto Sans CJK（包括我们给 ImGui 用的 `NotoSansCJK-Regular.ttc`）是 **CFF/`OTTO`** 字体，
   拿去给 `SAVAGEWIND_FONT` 就是崩溃；
 - 文泉驿微米黑是 **TrueType/`glyf`**，face 0 收录 GBK 汉字 + 假名 + 谚文，约 5 MB，
   Apache-2.0（可再分发），是游戏字体引擎能安全加载的最小可用中文字体。

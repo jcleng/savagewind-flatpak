@@ -26,7 +26,7 @@ APP_LIB=/app/lib
 #   游戏字体引擎（nn::font/nn::pl 路径）只能读 TrueType(glyf) 轮廓，遇到 CFF(.otf) 会崩溃
 #   （上游 runtime/hle/pl.c 的注释与 docs/linux.md 都写了这一点）。所以游戏内文本必须用
 #   文泉驿微米黑（TrueType，含简繁日韩）；ImGui（stb_truetype）可以读 CFF，用 Noto Sans SC。
-SAVAGEWIND_NOTO_FONT=/app/share/fonts/noto-cjk/NotoSansSC-Regular.otf
+SAVAGEWIND_NOTO_FONT=/app/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc
 SAVAGEWIND_WQY_FONT=/app/share/fonts/wqy/wqy-microhei.ttc
 
 # ImGui 界面：Noto Sans SC（字形更好看，stb_truetype 能解 CFF）

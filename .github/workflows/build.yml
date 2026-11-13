@@ -116,7 +116,7 @@ jobs:
       - name: Verify CJK fonts inside the sandbox
         run: |
           set -eu
-          NOTO=/app/share/fonts/noto-cjk/NotoSansSC-Regular.otf
+          NOTO=/app/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc
           WQY=/app/share/fonts/wqy/wqy-microhei.ttc
 
           echo '::group::fonts present + wrapper sets the env vars'
