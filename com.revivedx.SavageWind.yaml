@@ -67,7 +67,7 @@ modules:
         sha256: b76b0433203017ca80401b2ee0dd69350349871c4b19d504c34dbdd80541690a
         dest-filename: NotoSansCJK-Regular.ttc
       - type: file
-        url: https://raw.githubusercontent.com/googlefonts/noto-cjk/main/LICENSE
+        url: https://raw.githubusercontent.com/googlefonts/noto-cjk/main/Sans/LICENSE
         sha256: 6a73f9541c2de74158c0e7cf6b0a58ef774f5a780bf191f2d7ec9cc53efe2bf2
         dest-filename: LICENSE
 
